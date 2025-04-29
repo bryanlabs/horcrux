@@ -1,0 +1,77 @@
+name: "Manual Release"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (leave empty to build latest)'
+        required: false
+        default: ''
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          file: docker/horcrux/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  draft-release:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - name: Copy Binary
+        run: |
+          docker create -it --entrypoint sh --name amd --platform linux/amd64 ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
+          docker create -it --entrypoint sh --name arm --platform linux/arm64 ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
+          docker cp amd:/bin/horcrux ./horcrux_linux-amd64
+          docker cp arm:/bin/horcrux ./horcrux_linux-arm64
+          sha256sum ./horcrux_linux-amd64 > ./horcrux_sha256.txt
+          sha256sum ./horcrux_linux-arm64 >> ./horcrux_sha256.txt
+
+      - name: Draft Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: |
+            horcrux_linux-amd64
+            horcrux_linux-arm64
+            horcrux_sha256.txt
