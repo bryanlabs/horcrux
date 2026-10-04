@@ -63,7 +63,7 @@ The Dockerfile at `docker/horcrux/Dockerfile` produces a minimal scratch image:
 To build for AMD64 (required for the cluster):
 
 ```
-docker buildx build --builder cloud-bryanlabs-builder --platform linux/amd64 \
+docker buildx build --builder worker1 --platform linux/amd64 \
   -f docker/horcrux/Dockerfile -t ghcr.io/bryanlabs/horcrux:<tag> .
 ```
 
